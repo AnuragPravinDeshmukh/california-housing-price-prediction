@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CalVal | California Housing Valuation Engine</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Leaflet CSS for California Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#home" class="brand">
+                <div class="brand-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                        <polyline points="9 22 9 12 15 12 15 22"/>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-name">CalVal<span class="brand-dot">.ai</span></span>
+                    <span class="brand-tagline">Housing ML Engine</span>
+                </div>
+            </a>
+
+            <div class="nav-links">
+                <a href="#predictor" class="nav-link active">Valuation Tool</a>
+                <a href="#insights" class="nav-link">Market Insights</a>
+                <a href="#benchmarks" class="nav-link">Model Benchmark</a>
+                <a href="#pipeline" class="nav-link">Architecture</a>
+            </div>
+
+            <div class="nav-actions">
+                <div class="model-status-pill">
+                    <span class="status-indicator-dot"></span>
+                    <span>Tuned Random Forest • R² 0.83</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="hero-section" id="home">
+        <div class="hero-container">
+            <div class="hero-badge">
+                <span class="badge-sparkle">✦</span> Machine Learning Portfolio Project
+            </div>
+            <h1 class="hero-title">
+                California Housing <br>
+                <span class="gradient-text">Valuation Engine</span>
+            </h1>
+            <p class="hero-desc">
+                An end-to-end predictive machine learning system trained on 20,640 census districts.
+                Features automated preprocessing pipelines, custom ratio engineering, and 5-fold cross-validated hyperparameter tuning.
+            </p>
+
+            <!-- Key Metrics Strip -->
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <span class="kpi-value">20,640</span>
+                    <span class="kpi-label">Census Districts</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-value">$46,981</span>
+                    <span class="kpi-label">Holdout Test RMSE</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-value">0.8306</span>
+                    <span class="kpi-label">Test Set R² Score</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-value">10-Fold</span>
+                    <span class="kpi-label">Stratified CV</span>
+                </div>
+            </div>
+
+            <!-- Preset District Selector Buttons -->
+            <div class="presets-wrapper">
+                <span class="presets-title">Quick Presets:</span>
+                <button type="button" class="preset-btn" onclick="applyPreset('sf_bay')">🌉 San Francisco Bay</button>
+                <button type="button" class="preset-btn" onclick="applyPreset('la_coastal')">🌴 Los Angeles Coastal</button>
+                <button type="button" class="preset-btn" onclick="applyPreset('inland_valley')">🌾 Central Valley (Fresno)</button>
+                <button type="button" class="preset-btn" onclick="applyPreset('norcal')">🌲 Northern California</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="content-wrapper">
+        <!-- Notification / Error Banner -->
+        <div id="alertBanner" class="alert-banner" style="display: none;">
+            <div class="alert-icon">⚠️</div>
+            <div id="alertMessage" class="alert-text"></div>
+            <button type="button" class="alert-close" onclick="closeAlert()">&times;</button>
+        </div>
+
+        <!-- MAIN PREDICTOR SECTION -->
+        <section class="section-container" id="predictor">
+            <div class="section-header">
+                <span class="section-badge">Predictive Engine</span>
+                <h2>District Valuation Tool</h2>
+                <p>Adjust parameters or click directly on the California map to set district coordinates.</p>
+            </div>
+
+            <div class="predictor-grid">
+                <!-- Left: Input Form Card -->
+                <div class="card form-card">
+                    <div class="card-header-bar">
+                        <h3>District Parameters</h3>
+                        <span class="card-tag">Census Features</span>
+                    </div>
+
+                    <form id="predictionForm">
+                        <!-- Coordinates Section -->
+                        <div class="form-subsection-title">1. Geographic Location (Click map to autofill)</div>
+                        <div class="form-grid-2">
+                            <div class="form-group">
+                                <label for="latitude">Latitude <span class="label-hint">(32.5° to 42.0° N)</span></label>
+                                <input type="number" step="0.0001" id="latitude" name="latitude" value="{{ default_inputs.latitude }}" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="longitude">Longitude <span class="label-hint">(-124.3° to -114.3° W)</span></label>
+                                <input type="number" step="0.0001" id="longitude" name="longitude" value="{{ default_inputs.longitude }}" required>
+                            </div>
+                        </div>
+
+                        <!-- Proximity & Age -->
+                        <div class="form-subsection-title">2. Proximity & Demographics</div>
+                        <div class="form-grid-2">
+                            <div class="form-group">
+                                <label for="ocean_proximity">Ocean Proximity</label>
+                                <select id="ocean_proximity" name="ocean_proximity" required>
+                                    {% for opt in ocean_options %}
+                                        <option value="{{ opt }}" {% if opt == default_inputs.ocean_proximity %}selected{% endif %}>{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="housing_median_age">Median House Age <span class="label-hint">(Years)</span></label>
+                                <input type="number" step="1" min="1" max="100" id="housing_median_age" name="housing_median_age" value="{{ default_inputs.housing_median_age }}" required>
+                            </div>
+                        </div>
+
+                        <!-- Economic & Household Counts -->
+                        <div class="form-subsection-title">3. District Scale & Income</div>
+                        <div class="form-grid-2">
+                            <div class="form-group">
+                                <label for="median_income">Median Income <span class="label-hint">($10k/yr, e.g. 8.32 = $83,200)</span></label>
+                                <input type="number" step="0.0001" min="0.1" id="median_income" name="median_income" value="{{ default_inputs.median_income }}" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="population">Total Population <span class="label-hint">(District residents)</span></label>
+                                <input type="number" step="1" min="1" id="population" name="population" value="{{ default_inputs.population }}" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="households">Households <span class="label-hint">(Occupied units)</span></label>
+                                <input type="number" step="1" min="1" id="households" name="households" value="{{ default_inputs.households }}" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="total_rooms">Total Rooms <span class="label-hint">(Across all units)</span></label>
+                                <input type="number" step="1" min="1" id="total_rooms" name="total_rooms" value="{{ default_inputs.total_rooms }}" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="total_bedrooms">Total Bedrooms <span class="label-hint">(Leave blank to test median imputer)</span></label>
+                            <input type="number" step="1" min="1" id="total_bedrooms" name="total_bedrooms" value="{{ default_inputs.total_bedrooms }}" placeholder="Imputed with training median if left empty">
+                        </div>
+
+                        <!-- Live Feature Engineering Indicator -->
+                        <div class="live-features-box">
+                            <span class="live-features-title">Engineered Ratios (Calculated in Real-Time):</span>
+                            <div class="ratios-row">
+                                <div class="ratio-pill">
+                                    <span class="ratio-label">Rooms/Household:</span>
+                                    <span class="ratio-val" id="disp_rooms_per_hhold">6.98</span>
+                                </div>
+                                <div class="ratio-pill">
+                                    <span class="ratio-label">Pop/Household:</span>
+                                    <span class="ratio-val" id="disp_pop_per_hhold">2.56</span>
+                                </div>
+                                <div class="ratio-pill">
+                                    <span class="ratio-label">Bedrooms/Room:</span>
+                                    <span class="ratio-val" id="disp_bedrooms_per_room">0.147</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="predictBtn" class="btn-primary-large">
+                            <span class="btn-text">PREDICT HOUSE VALUE</span>
+                            <span class="spinner" style="display: none;"></span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Right: Map + Result Card -->
+                <div class="predictor-sidebar">
+                    <!-- California Map Card -->
+                    <div class="card map-card">
+                        <div class="card-header-bar">
+                            <h3>California Interactive Map</h3>
+                            <span class="card-tag">Click to Select Pin</span>
+                        </div>
+                        <div id="mapContainer" class="interactive-map"></div>
+                        <p class="map-hint">📍 Click anywhere on California to update coordinates.</p>
+                    </div>
+
+                    <!-- Valuation Output Card -->
+                    <div class="card valuation-card" id="valuationCard">
+                        <div class="valuation-header">
+                            <span class="val-tag">ML Estimate</span>
+                            <span class="val-sub">Tuned Random Forest</span>
+                        </div>
+
+                        <div id="resultPlaceholder" class="val-placeholder">
+                            <div class="pulse-ring"></div>
+                            <p>Submit district parameters to calculate predicted valuation.</p>
+                        </div>
+
+                        <div id="resultContent" class="val-content" style="display: none;">
+                            <span class="val-label">Estimated Median House Value</span>
+                            <div class="val-price" id="predictedPrice">$0</div>
+                            <div class="val-meta-chips">
+                                <span class="meta-chip">Est. CI Range: <strong id="ciRange">$0 - $0</strong></span>
+                                <span class="meta-chip">Value/Room: <strong id="pricePerRoom">$0</strong></span>
+                            </div>
+                            <div class="valuation-disclaimer">
+                                <strong>Disclaimer:</strong> This prediction is generated by a machine learning model based on historical California census patterns. It is intended for educational and analytical comparison, not formal real estate appraisal.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- EXPLORATORY DATA ANALYSIS SECTION -->
+        <section class="section-container" id="insights">
+            <div class="section-header">
+                <span class="section-badge">Exploratory Data Analysis</span>
+                <h2>California Housing Market Insights</h2>
+                <p>Key statistical relationships discovered during dataset exploration.</p>
+            </div>
+
+            <div class="insights-grid">
+                <!-- Plot 1: Income vs Price -->
+                <div class="card insight-card">
+                    <div class="insight-img-wrapper">
+                        <img src="{{ url_for('static', filename='img/income_vs_value.png') }}" alt="Income vs Value" loading="lazy">
+                    </div>
+                    <div class="insight-details">
+                        <h4>Median Income vs. Median House Value</h4>
+                        <p>Median income exhibits the strongest positive correlation (<strong>r = 0.69</strong>) with housing value. Notice the distinct horizontal ceiling at $500,001 representing capped values in census recording.</p>
+                    </div>
+                </div>
+
+                <!-- Plot 2: Geographic & Population Heatmap -->
+                <div class="card insight-card">
+                    <div class="insight-img-wrapper">
+                        <img src="{{ url_for('static', filename='img/geographic_distribution.png') }}" alt="Geographic Distribution" loading="lazy">
+                    </div>
+                    <div class="insight-details">
+                        <h4>Geographic & Density Distribution</h4>
+                        <p>High prices cluster strongly along the Pacific coastline and major urban hubs (San Francisco Bay Area and Los Angeles / Orange County), with circle diameters indicating district population size.</p>
+                    </div>
+                </div>
+
+                <!-- Plot 3: Target Distribution -->
+                <div class="card insight-card">
+                    <div class="insight-img-wrapper">
+                        <img src="{{ url_for('static', filename='img/house_value_distribution.png') }}" alt="House Value Distribution" loading="lazy">
+                    </div>
+                    <div class="insight-details">
+                        <h4>Median House Value Distribution</h4>
+                        <p>Right-skewed distribution with a median around $179,700 and a high concentration of luxury districts capped at the maximum value threshold of $500,000.</p>
+                    </div>
+                </div>
+
+                <!-- Plot 4: Correlation Heatmap -->
+                <div class="card insight-card">
+                    <div class="insight-img-wrapper">
+                        <img src="{{ url_for('static', filename='img/correlation_matrix.png') }}" alt="Correlation Heatmap" loading="lazy">
+                    </div>
+                    <div class="insight-details">
+                        <h4>Attribute Correlation Matrix</h4>
+                        <p>High collinearity exists between rooms, bedrooms, population, and households, making feature engineering ratios (e.g. rooms per household) essential for model quality.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODEL BENCHMARKS SECTION -->
+        <section class="section-container" id="benchmarks">
+            <div class="section-header">
+                <span class="section-badge">Model Comparison</span>
+                <h2>Real Model Benchmarks & Feature Importance</h2>
+                <p>Actual performance metrics measured through 10-fold cross-validation and holdout testing.</p>
+            </div>
+
+            <div class="benchmarks-grid">
+                <!-- Comparison Table -->
+                <div class="card benchmark-card">
+                    <div class="card-header-bar">
+                        <h3>Model Evaluation Summary</h3>
+                        <span class="card-tag">Tested on 16,512 Train / 4,128 Test</span>
+                    </div>
+
+                    {% if model_results and model_results.models %}
+                    <div class="table-responsive">
+                        <table class="benchmark-table">
+                            <thead>
+                                <tr>
+                                    <th>Algorithm</th>
+                                    <th>Training RMSE</th>
+                                    <th>10-Fold CV RMSE</th>
+                                    <th>Evaluation Note</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for name, m in model_results.models.items() %}
+                                <tr {% if 'Tuned' in name %}class="row-winner"{% endif %}>
+                                    <td>
+                                        <strong>{{ name }}</strong>
+                                        {% if 'Tuned' in name %}<span class="winner-tag">Champion</span>{% endif %}
+                                    </td>
+                                    <td>${{ "{:,.2f}".format(m.train_rmse) }}</td>
+                                    <td>${{ "{:,.2f}".format(m.cv_mean_rmse) }}</td>
+                                    <td>
+                                        {% if 'Linear' in name %}Linear underfitting
+                                        {% elif 'Decision Tree' in name %}Severe overfitting (0 train error)
+                                        {% elif 'Baseline' in name %}Standard ensemble
+                                        {% elif 'Tuned' in name %}Optimized parameters
+                                        {% else %}Evaluated{% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if model_results.final_test_evaluation %}
+                    <div class="test-eval-banner">
+                        <div class="eval-stat">
+                            <span class="stat-num">${{ "{:,.2f}".format(model_results.final_test_evaluation.test_rmse) }}</span>
+                            <span class="stat-lbl">Final Test Set RMSE</span>
+                        </div>
+                        <div class="eval-stat">
+                            <span class="stat-num">${{ "{:,.2f}".format(model_results.final_test_evaluation.test_mae) }}</span>
+                            <span class="stat-lbl">Mean Absolute Error</span>
+                        </div>
+                        <div class="eval-stat">
+                            <span class="stat-num">{{ model_results.final_test_evaluation.test_r2 }}</span>
+                            <span class="stat-lbl">Coefficient of Determination (R²)</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+
+                <!-- Feature Importance Card -->
+                <div class="card importance-card">
+                    <div class="card-header-bar">
+                        <h3>Top Feature Importances</h3>
+                        <span class="card-tag">Tuned Random Forest</span>
+                    </div>
+
+                    {% if model_results and model_results.feature_importances %}
+                    <div class="importance-bars-container">
+                        {% for item in model_results.feature_importances[:8] %}
+                        <div class="feat-row">
+                            <div class="feat-meta">
+                                <span class="feat-title">{{ item.feature }}</span>
+                                <span class="feat-pct">{{ item.percentage }}%</span>
+                            </div>
+                            <div class="feat-track">
+                                <div class="feat-fill" style="width: {{ [item.percentage * 2.5, 100] | min }}%;"></div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <!-- ARCHITECTURE & PIPELINE SECTION -->
+        <section class="section-container" id="pipeline">
+            <div class="section-header">
+                <span class="section-badge">Methodology</span>
+                <h2>End-to-End Architecture</h2>
+                <p>How data flows from raw census records to real-time model inference.</p>
+            </div>
+
+            <div class="pipeline-flow">
+                <div class="flow-step">
+                    <div class="flow-icon">1</div>
+                    <h4>Stratified Sampling</h4>
+                    <p>Stratified 80/20 train/test split based on income categories to prevent demographic sampling bias.</p>
+                </div>
+                <div class="flow-connector">→</div>
+                <div class="flow-step">
+                    <div class="flow-icon">2</div>
+                    <h4>Preprocessing Pipeline</h4>
+                    <p>ColumnTransformer handling SimpleImputer(median) and OneHotEncoder(sparse_output=False).</p>
+                </div>
+                <div class="flow-connector">→</div>
+                <div class="flow-step">
+                    <div class="flow-icon">3</div>
+                    <h4>Feature Engineering</h4>
+                    <p>Automated ratio generation for rooms/household, population/household, and bedrooms/room.</p>
+                </div>
+                <div class="flow-connector">→</div>
+                <div class="flow-step">
+                    <div class="flow-icon">4</div>
+                    <h4>Tuned Random Forest</h4>
+                    <p>Ensemble estimator optimized via 5-fold cross-validated hyperparameter search.</p>
+                </div>
+                <div class="flow-connector">→</div>
+                <div class="flow-step">
+                    <div class="flow-icon">5</div>
+                    <h4>Flask REST API</h4>
+                    <p>Web interface serving real-time predictions using the single unified pickled pipeline.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <div class="footer-container">
+            <div class="footer-brand">
+                <span class="footer-logo">CalVal.ai</span>
+                <p>California Housing Price Prediction — End-to-End Machine Learning System</p>
+            </div>
+            <div class="footer-badges">
+                <span class="tech-badge">Python 3.13</span>
+                <span class="tech-badge">Scikit-Learn 1.9</span>
+                <span class="tech-badge">Flask 3.1</span>
+                <span class="tech-badge">Leaflet.js</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
